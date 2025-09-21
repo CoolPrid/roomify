@@ -55,8 +55,7 @@ class AvailabilityServiceTest {
         LocalDate christmas = LocalDate.of(2025, 12, 25);
         LocalDate dayAfter = christmas.plusDays(1);
 
-        when(bookingRepository.findByRoomId("room-1")).thenReturn(Collections.emptyList());
-
+        // No need to stub for blocked dates test since it's handled internally
         assertFalse(availabilityService.isAvailable("room-1", christmas, dayAfter));
     }
 
@@ -132,7 +131,6 @@ class AvailabilityServiceTest {
         existingBooking.setTo(checkOut);
 
         when(bookingRepository.findByRoomId("available-room")).thenReturn(Collections.emptyList());
-        when(bookingRepository.findByRoomId("room-maintenance-1")).thenReturn(Collections.emptyList());
         when(bookingRepository.findByRoomId("booked-room")).thenReturn(List.of(existingBooking));
 
         Map<String, Boolean> result = availabilityService.checkMultipleRooms(roomIds, checkIn, checkOut);

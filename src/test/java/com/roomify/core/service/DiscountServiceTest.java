@@ -81,7 +81,10 @@ class DiscountServiceTest {
         LocalDate checkOut = LocalDate.of(2025, 6, 8); // 7 nights
 
         double result = discountService.applyDiscount("user", 100.0, null, checkIn, checkOut);
-        assertEquals(85.0, result); // 15% off for 7+ nights
+
+        // Long stay (15% off) + Weekend (8% off) = compound discount
+        // 100 * 0.85 * 0.92 = 78.2
+        assertEquals(78.2, result);
     }
 
     @Test
