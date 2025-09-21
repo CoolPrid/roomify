@@ -11,30 +11,44 @@ public class AvailabilityService {
     private final Set<String> maintenanceRooms;
     private final Map<String, Set<LocalDate>> blockedDates;
 
+    // Default constructor for backward compatibility
+    public AvailabilityService() {
+        this(null);
+    }
+
+    // Enhanced constructor with repository
     public AvailabilityService(BookingRepository bookingRepository) {
         this.bookingRepository = bookingRepository;
         this.maintenanceRooms = new HashSet<>();
         this.blockedDates = new HashMap<>();
 
-        // Some rooms are under maintenance
-        maintenanceRooms.add("room-maintenance-1");
-        maintenanceRooms.add("room-maintenance-2");
+        // Initialize maintenance rooms and blocked dates only if we have enhanced mode
+        if (bookingRepository != null) {
+            // Some rooms are under maintenance
+            maintenanceRooms.add("room-maintenance-1");
+            maintenanceRooms.add("room-maintenance-2");
 
-        // Some rooms have blocked dates (owner use, repairs, etc.)
-        Set<LocalDate> room1Blocked = new HashSet<>();
-        room1Blocked.add(LocalDate.of(2025, 12, 24)); // Christmas Eve
-        room1Blocked.add(LocalDate.of(2025, 12, 25)); // Christmas Day
-        room1Blocked.add(LocalDate.of(2025, 12, 31)); // New Year's Eve
-        blockedDates.put("room-1", room1Blocked);
+            // Some rooms have blocked dates (owner use, repairs, etc.)
+            Set<LocalDate> room1Blocked = new HashSet<>();
+            room1Blocked.add(LocalDate.of(2025, 12, 24)); // Christmas Eve
+            room1Blocked.add(LocalDate.of(2025, 12, 25)); // Christmas Day
+            room1Blocked.add(LocalDate.of(2025, 12, 31)); // New Year's Eve
+            blockedDates.put("room-1", room1Blocked);
 
-        Set<LocalDate> room2Blocked = new HashSet<>();
-        room2Blocked.add(LocalDate.of(2025, 7, 4));   // Independence Day
-        room2Blocked.add(LocalDate.of(2025, 11, 28)); // Thanksgiving
-        blockedDates.put("room-2", room2Blocked);
+            Set<LocalDate> room2Blocked = new HashSet<>();
+            room2Blocked.add(LocalDate.of(2025, 7, 4));   // Independence Day
+            room2Blocked.add(LocalDate.of(2025, 11, 28)); // Thanksgiving
+            blockedDates.put("room-2", room2Blocked);
+        }
     }
 
     public boolean isAvailable(String roomId, LocalDate from, LocalDate to) {
-        // Validation checks
+        // Original skeleton behavior for backward compatibility
+        if (bookingRepository == null) {
+            return true;
+        }
+
+        // Enhanced logic
         if (roomId == null || from == null || to == null) {
             return false;
         }

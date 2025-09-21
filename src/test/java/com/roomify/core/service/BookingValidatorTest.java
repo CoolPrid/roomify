@@ -2,9 +2,7 @@ package com.roomify.core.service;
 
 import com.roomify.core.dto.BookingRequest;
 import org.junit.jupiter.api.Test;
-
 import java.time.LocalDate;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 class BookingValidatorTest {

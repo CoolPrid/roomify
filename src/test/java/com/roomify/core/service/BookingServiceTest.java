@@ -18,32 +18,16 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class BookingServiceTest {
 
-    @Mock
-    BookingRepository bookingRepository;
+    @Mock BookingRepository bookingRepository;
+    @Mock AvailabilityService availabilityService;
+    @Mock PaymentService paymentService;
+    @Mock BookingValidator bookingValidator;
+    @Mock PricingService pricingService;
+    @Mock DiscountService discountService;
+    @Mock NotificationService notificationService;
+    @Mock InvoiceService invoiceService;
 
-    @Mock
-    AvailabilityService availabilityService;
-
-    @Mock
-    PaymentService paymentService;
-
-    @Mock
-    BookingValidator bookingValidator;
-
-    @Mock
-    PricingService pricingService;
-
-    @Mock
-    DiscountService discountService;
-
-    @Mock
-    NotificationService notificationService;
-
-    @Mock
-    InvoiceService invoiceService;
-
-    @InjectMocks
-    BookingService bookingService;
+    @InjectMocks BookingService bookingService;
 
     @Test
     void createBooking_whenRoomAvailable_andPaymentSucceeds_returnsBooking() {
@@ -74,5 +58,35 @@ class BookingServiceTest {
 
         assertThrows(IllegalArgumentException.class, () -> bookingService.createBooking(req));
         verify(paymentService, never()).charge(any(), anyDouble());
+    }
+
+    @Test
+    void createBooking_whenPaymentFails_throwsIllegalStateException() {
+        var req = new BookingRequest("r1","u1", LocalDate.now(), LocalDate.now().plusDays(1));
+        when(availabilityService.isAvailable(any(), any(), any())).thenReturn(true);
+        when(pricingService.calculatePrice(any(), any(), any())).thenReturn(100.0);
+        when(discountService.applyDiscount(any(), anyDouble())).thenReturn(100.0);
+        when(paymentService.charge(any(), anyDouble())).thenReturn(new PaymentResult(false, null));
+
+        assertThrows(IllegalStateException.class, () -> bookingService.createBooking(req));
+        verify(bookingRepository, never()).save(any());
+    }
+
+    @Test
+    void createBooking_whenValidatorThrows_propagatesException() {
+        var req = new BookingRequest("r1","u1", LocalDate.now(), LocalDate.now().plusDays(2));
+        doThrow(new IllegalArgumentException("bad")).when(bookingValidator).validate(any());
+
+        assertThrows(IllegalArgumentException.class, () -> bookingService.createBooking(req));
+        verify(availabilityService, never()).isAvailable(any(), any(), any());
+    }
+
+    @Test
+    void cancelBooking_invokesRepositoryDelete() {
+        doNothing().when(bookingRepository).delete("b123");
+
+        bookingService.cancelBooking("b123");
+
+        verify(bookingRepository).delete("b123");
     }
 }
