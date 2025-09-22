@@ -3,85 +3,49 @@ package com.roomify.core.service;
 import com.roomify.core.dto.Booking;
 import com.roomify.core.repository.BookingRepository;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 
+
 public class AvailabilityService {
+
+    private static final int MAX_BOOKING_DAYS = 30;
+    private static final int MIN_BOOKING_DAYS = 1;
+    private static final int MAX_ADVANCE_BOOKING_DAYS = 365;
+    private static final int WEEKEND_MIN_NIGHTS_PREMIUM_ROOMS = 2;
 
     private final BookingRepository bookingRepository;
     private final Set<String> maintenanceRooms;
     private final Map<String, Set<LocalDate>> blockedDates;
 
-    // Default constructor for backward compatibility
     public AvailabilityService() {
         this(null);
     }
 
-    // Enhanced constructor with repository
     public AvailabilityService(BookingRepository bookingRepository) {
         this.bookingRepository = bookingRepository;
         this.maintenanceRooms = new HashSet<>();
         this.blockedDates = new HashMap<>();
 
-        // Initialize maintenance rooms and blocked dates only if we have enhanced mode
         if (bookingRepository != null) {
-            // Some rooms are under maintenance
-            maintenanceRooms.add("room-maintenance-1");
-            maintenanceRooms.add("room-maintenance-2");
-
-            // Some rooms have blocked dates (owner use, repairs, etc.)
-            Set<LocalDate> room1Blocked = new HashSet<>();
-            room1Blocked.add(LocalDate.of(2025, 12, 24)); // Christmas Eve
-            room1Blocked.add(LocalDate.of(2025, 12, 25)); // Christmas Day
-            room1Blocked.add(LocalDate.of(2025, 12, 31)); // New Year's Eve
-            blockedDates.put("room-1", room1Blocked);
-
-            Set<LocalDate> room2Blocked = new HashSet<>();
-            room2Blocked.add(LocalDate.of(2025, 7, 4));   // Independence Day
-            room2Blocked.add(LocalDate.of(2025, 11, 28)); // Thanksgiving
-            blockedDates.put("room-2", room2Blocked);
+            initializeMaintenanceRooms();
+            initializeBlockedDates();
         }
     }
 
     public boolean isAvailable(String roomId, LocalDate from, LocalDate to) {
-        // Original skeleton behavior for backward compatibility
         if (bookingRepository == null) {
-            return true;
+            return true; // Backward compatibility mode
         }
 
-        // Enhanced logic
-        if (roomId == null || from == null || to == null) {
+        if (!isValidRequest(roomId, from, to)) {
             return false;
         }
 
-        if (from.isAfter(to) || from.equals(to)) {
-            return false; // Invalid date range
-        }
-
-        if (from.isBefore(LocalDate.now())) {
-            return false; // Can't book in the past
-        }
-
-        // Check if room is under maintenance
-        if (isRoomUnderMaintenance(roomId)) {
-            return false;
-        }
-
-        // Check if any dates in the range are blocked
-        if (hasBlockedDatesInRange(roomId, from, to)) {
-            return false;
-        }
-
-        // Check for existing bookings that overlap
-        if (hasOverlappingBookings(roomId, from, to)) {
-            return false;
-        }
-
-        // Check business rules
-        if (!meetBusinessRules(roomId, from, to)) {
-            return false;
-        }
-
-        return true;
+        return !isRoomUnderMaintenance(roomId) &&
+                !hasBlockedDatesInRange(roomId, from, to) &&
+                !hasOverlappingBookings(roomId, from, to) &&
+                meetBusinessRules(roomId, from, to);
     }
 
     public List<LocalDate> getAvailableDates(String roomId, LocalDate from, LocalDate to) {
@@ -93,11 +57,10 @@ public class AvailabilityService {
 
         LocalDate current = from;
         while (!current.isAfter(to)) {
-            LocalDate next = current.plusDays(1);
-            if (isAvailable(roomId, current, next)) {
+            if (isAvailable(roomId, current, current.plusDays(1))) {
                 availableDates.add(current);
             }
-            current = next;
+            current = current.plusDays(1);
         }
 
         return availableDates;
@@ -111,6 +74,30 @@ public class AvailabilityService {
         }
 
         return availability;
+    }
+
+    private void initializeMaintenanceRooms() {
+        maintenanceRooms.add("room-maintenance-1");
+        maintenanceRooms.add("room-maintenance-2");
+    }
+
+    private void initializeBlockedDates() {
+        Set<LocalDate> room1Blocked = new HashSet<>();
+        room1Blocked.add(LocalDate.of(2025, 12, 24));
+        room1Blocked.add(LocalDate.of(2025, 12, 25));
+        room1Blocked.add(LocalDate.of(2025, 12, 31));
+        blockedDates.put("room-1", room1Blocked);
+
+        Set<LocalDate> room2Blocked = new HashSet<>();
+        room2Blocked.add(LocalDate.of(2025, 7, 4));
+        room2Blocked.add(LocalDate.of(2025, 11, 28));
+        blockedDates.put("room-2", room2Blocked);
+    }
+
+    private boolean isValidRequest(String roomId, LocalDate from, LocalDate to) {
+        return roomId != null && from != null && to != null &&
+                from.isBefore(to) &&
+                !from.isBefore(LocalDate.now());
     }
 
     private boolean isRoomUnderMaintenance(String roomId) {
@@ -136,45 +123,32 @@ public class AvailabilityService {
 
     private boolean hasOverlappingBookings(String roomId, LocalDate from, LocalDate to) {
         if (bookingRepository == null) {
-            return false; // No bookings to check against
+            return false;
         }
 
         List<Booking> existingBookings = bookingRepository.findByRoomId(roomId);
 
-        for (Booking booking : existingBookings) {
-            if (datesOverlap(from, to, booking.getFrom(), booking.getTo())) {
-                return true;
-            }
-        }
-
-        return false;
+        return existingBookings.stream()
+                .anyMatch(booking -> datesOverlap(from, to, booking.getFrom(), booking.getTo()));
     }
 
     private boolean datesOverlap(LocalDate start1, LocalDate end1, LocalDate start2, LocalDate end2) {
-        // Two date ranges overlap if: start1 < end2 AND start2 < end1
         return start1.isBefore(end2) && start2.isBefore(end1);
     }
 
     private boolean meetBusinessRules(String roomId, LocalDate from, LocalDate to) {
-        // Business Rule 1: Maximum 30-day booking
-        long days = java.time.temporal.ChronoUnit.DAYS.between(from, to);
-        if (days > 30) {
+        long stayDuration = ChronoUnit.DAYS.between(from, to);
+        long daysInAdvance = ChronoUnit.DAYS.between(LocalDate.now(), from);
+
+        if (stayDuration > MAX_BOOKING_DAYS || stayDuration < MIN_BOOKING_DAYS) {
             return false;
         }
 
-        // Business Rule 2: Minimum 1-night stay
-        if (days < 1) {
+        if (daysInAdvance > MAX_ADVANCE_BOOKING_DAYS) {
             return false;
         }
 
-        // Business Rule 3: Can't book more than 365 days in advance
-        long daysInAdvance = java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(), from);
-        if (daysInAdvance > 365) {
-            return false;
-        }
-
-        // Business Rule 4: Some rooms require minimum 2-night stays on weekends
-        if (isWeekendCheckIn(from) && isShortStayRoom(roomId) && days < 2) {
+        if (isWeekendCheckIn(from) && isPremiumRoom(roomId) && stayDuration < WEEKEND_MIN_NIGHTS_PREMIUM_ROOMS) {
             return false;
         }
 
@@ -182,16 +156,14 @@ public class AvailabilityService {
     }
 
     private boolean isWeekendCheckIn(LocalDate checkIn) {
-        int dayOfWeek = checkIn.getDayOfWeek().getValue();
-        return dayOfWeek >= 6; // Saturday=6, Sunday=7
+        return checkIn.getDayOfWeek().getValue() >= 6;
     }
 
-    private boolean isShortStayRoom(String roomId) {
-        // Some rooms have minimum stay requirements
+    private boolean isPremiumRoom(String roomId) {
         return roomId.contains("suite") || roomId.contains("premium");
     }
 
-    // Helper methods for testing
+    // Management methods for testing and administration
     public void addMaintenanceRoom(String roomId) {
         maintenanceRooms.add(roomId);
     }

@@ -7,7 +7,16 @@ import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 
+
 public class PricingService {
+
+    private static final double WEEKEND_PREMIUM = 1.3;
+    private static final double HOLIDAY_PREMIUM = 1.5;
+    private static final double LONG_STAY_WEEKLY_DISCOUNT = 0.95;
+    private static final double LONG_STAY_BIWEEKLY_DISCOUNT = 0.9;
+    private static final double LONG_STAY_MONTHLY_DISCOUNT = 0.8;
+    private static final double EARLY_BOOKING_30_DAYS_DISCOUNT = 0.97;
+    private static final double EARLY_BOOKING_90_DAYS_DISCOUNT = 0.95;
 
     private final RoomRepository roomRepository;
     private final Map<String, Double> baseRates;
@@ -22,58 +31,35 @@ public class PricingService {
     }
 
     public double calculatePrice(String roomId, LocalDate from, LocalDate to) {
-        if (roomId == null || from == null || to == null) {
-            return 0.0;
-        }
-
-        if (from.isAfter(to) || from.equals(to)) {
+        if (!isValidPricingRequest(roomId, from, to)) {
             return 0.0;
         }
 
         long nights = ChronoUnit.DAYS.between(from, to);
-        if (nights <= 0) {
-            return 0.0;
-        }
+        double totalPrice = calculateNightlyRates(roomId, from, to);
 
-        double totalPrice = 0.0;
-        LocalDate currentDate = from;
-
-        // Calculate price for each night
-        for (int i = 0; i < nights; i++) {
-            double nightPrice = calculateNightPrice(roomId, currentDate);
-            totalPrice += nightPrice;
-            currentDate = currentDate.plusDays(1);
-        }
-
-        // Apply long stay discounts
         totalPrice = applyLongStayDiscount(totalPrice, nights);
-
-        // Apply early booking discounts
         totalPrice = applyEarlyBookingDiscount(totalPrice, from);
 
         return Math.round(totalPrice * 100.0) / 100.0;
     }
 
     public double calculateNightPrice(String roomId, LocalDate date) {
-        double baseRate = getBaseRate(roomId);
+        double price = getBaseRate(roomId);
 
-        // Apply weekend premium
         if (isWeekend(date)) {
-            baseRate *= 1.3; // 30% weekend premium
+            price *= WEEKEND_PREMIUM;
         }
 
-        // Apply seasonal multiplier
-        baseRate *= getSeasonalMultiplier(date);
+        price *= getSeasonalMultiplier(date);
 
-        // Apply holiday premium
         if (isHoliday(date)) {
-            baseRate *= 1.5; // 50% holiday premium
+            price *= HOLIDAY_PREMIUM;
         }
 
-        // Apply demand-based pricing (simulated)
-        baseRate *= getDemandMultiplier(roomId, date);
+        price *= getDemandMultiplier(roomId, date);
 
-        return baseRate;
+        return price;
     }
 
     public Map<LocalDate, Double> getPriceBreakdown(String roomId, LocalDate from, LocalDate to) {
@@ -93,23 +79,33 @@ public class PricingService {
         double totalPrice = calculatePrice(roomId, from, to);
         long nights = ChronoUnit.DAYS.between(from, to);
 
-        if (nights <= 0) {
-            return 0.0;
+        return nights > 0 ? totalPrice / nights : 0.0;
+    }
+
+    private boolean isValidPricingRequest(String roomId, LocalDate from, LocalDate to) {
+        return roomId != null && from != null && to != null &&
+                from.isBefore(to) && ChronoUnit.DAYS.between(from, to) > 0;
+    }
+
+    private double calculateNightlyRates(String roomId, LocalDate from, LocalDate to) {
+        double totalPrice = 0.0;
+        LocalDate currentDate = from;
+
+        while (currentDate.isBefore(to)) {
+            totalPrice += calculateNightPrice(roomId, currentDate);
+            currentDate = currentDate.plusDays(1);
         }
 
-        return totalPrice / nights;
+        return totalPrice;
     }
 
     private double getBaseRate(String roomId) {
-        // First try to get from room repository
         if (roomRepository != null) {
             Optional<Room> room = roomRepository.findById(roomId);
             if (room.isPresent()) {
                 return room.get().getBasePrice();
             }
         }
-
-        // Fallback to predefined rates
         return baseRates.getOrDefault(roomId, 100.0);
     }
 
@@ -126,15 +122,10 @@ public class PricingService {
     private String getSeason(LocalDate date) {
         int month = date.getMonthValue();
 
-        if (month >= 12 || month <= 2) {
-            return "winter";
-        } else if (month >= 3 && month <= 5) {
-            return "spring";
-        } else if (month >= 6 && month <= 8) {
-            return "summer";
-        } else {
-            return "autumn";
-        }
+        if (month >= 12 || month <= 2) return "winter";
+        if (month >= 3 && month <= 5) return "spring";
+        if (month >= 6 && month <= 8) return "summer";
+        return "autumn";
     }
 
     private boolean isHoliday(LocalDate date) {
@@ -142,50 +133,28 @@ public class PricingService {
     }
 
     private double getDemandMultiplier(String roomId, LocalDate date) {
-        // Simulate demand-based pricing
-        // In reality, this would check booking patterns, events, etc.
+        DayOfWeek dayOfWeek = date.getDayOfWeek();
 
-        // Higher demand on Fridays and Saturdays
-        if (date.getDayOfWeek() == DayOfWeek.FRIDAY) {
-            return 1.2;
-        }
-        if (date.getDayOfWeek() == DayOfWeek.SATURDAY) {
-            return 1.25;
-        }
-
-        // Lower demand on Tuesdays and Wednesdays
-        if (date.getDayOfWeek() == DayOfWeek.TUESDAY ||
-                date.getDayOfWeek() == DayOfWeek.WEDNESDAY) {
-            return 0.9;
-        }
-
-        // Premium rooms have higher base demand
-        if (roomId.contains("suite") || roomId.contains("premium")) {
-            return 1.1;
-        }
+        if (dayOfWeek == DayOfWeek.FRIDAY) return 1.2;
+        if (dayOfWeek == DayOfWeek.SATURDAY) return 1.25;
+        if (dayOfWeek == DayOfWeek.TUESDAY || dayOfWeek == DayOfWeek.WEDNESDAY) return 0.9;
+        if (roomId.contains("suite") || roomId.contains("premium")) return 1.1;
 
         return 1.0;
     }
 
     private double applyLongStayDiscount(double totalPrice, long nights) {
-        if (nights >= 28) {
-            return totalPrice * 0.8; // 20% discount for monthly stays
-        } else if (nights >= 14) {
-            return totalPrice * 0.9; // 10% discount for bi-weekly stays
-        } else if (nights >= 7) {
-            return totalPrice * 0.95; // 5% discount for weekly stays
-        }
+        if (nights >= 28) return totalPrice * LONG_STAY_MONTHLY_DISCOUNT;
+        if (nights >= 14) return totalPrice * LONG_STAY_BIWEEKLY_DISCOUNT;
+        if (nights >= 7) return totalPrice * LONG_STAY_WEEKLY_DISCOUNT;
         return totalPrice;
     }
 
     private double applyEarlyBookingDiscount(double totalPrice, LocalDate checkIn) {
         long daysInAdvance = ChronoUnit.DAYS.between(LocalDate.now(), checkIn);
 
-        if (daysInAdvance >= 90) {
-            return totalPrice * 0.95; // 5% discount for 90+ days advance
-        } else if (daysInAdvance >= 30) {
-            return totalPrice * 0.97; // 3% discount for 30+ days advance
-        }
+        if (daysInAdvance >= 90) return totalPrice * EARLY_BOOKING_90_DAYS_DISCOUNT;
+        if (daysInAdvance >= 30) return totalPrice * EARLY_BOOKING_30_DAYS_DISCOUNT;
 
         return totalPrice;
     }
@@ -203,28 +172,25 @@ public class PricingService {
 
     private Map<String, Double> initializeSeasonalMultipliers() {
         Map<String, Double> multipliers = new HashMap<>();
-        multipliers.put("winter", 0.8);  // 20% discount in winter
-        multipliers.put("spring", 1.0);  // Base rate in spring
-        multipliers.put("summer", 1.4);  // 40% premium in summer
-        multipliers.put("autumn", 1.1);  // 10% premium in autumn
+        multipliers.put("winter", 0.8);
+        multipliers.put("spring", 1.0);
+        multipliers.put("summer", 1.4);
+        multipliers.put("autumn", 1.1);
         return multipliers;
     }
 
     private Set<LocalDate> initializeHolidayDates() {
         Set<LocalDate> holidays = new HashSet<>();
-
-        // 2025 holidays
-        holidays.add(LocalDate.of(2025, 1, 1));   // New Year's Day
-        holidays.add(LocalDate.of(2025, 7, 4));   // Independence Day
-        holidays.add(LocalDate.of(2025, 12, 25)); // Christmas Day
-        holidays.add(LocalDate.of(2025, 12, 31)); // New Year's Eve
-        holidays.add(LocalDate.of(2025, 11, 27)); // Thanksgiving
-        holidays.add(LocalDate.of(2025, 2, 14));  // Valentine's Day
-
+        holidays.add(LocalDate.of(2025, 1, 1));
+        holidays.add(LocalDate.of(2025, 7, 4));
+        holidays.add(LocalDate.of(2025, 12, 25));
+        holidays.add(LocalDate.of(2025, 12, 31));
+        holidays.add(LocalDate.of(2025, 11, 27));
+        holidays.add(LocalDate.of(2025, 2, 14));
         return holidays;
     }
 
-    // Helper methods for testing
+    // Management methods for testing and configuration
     public void addHoliday(LocalDate date) {
         holidayDates.add(date);
     }

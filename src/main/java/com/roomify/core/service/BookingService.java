@@ -5,6 +5,7 @@ import com.roomify.core.dto.BookingRequest;
 import com.roomify.core.dto.PaymentResult;
 import com.roomify.core.repository.BookingRepository;
 
+
 public class BookingService {
 
     private final BookingRepository bookingRepository;
@@ -36,32 +37,44 @@ public class BookingService {
 
     public Booking createBooking(BookingRequest request) {
         bookingValidator.validate(request);
+
         if (!availabilityService.isAvailable(request.roomId(), request.from(), request.to())) {
             throw new IllegalArgumentException("Room not available");
         }
+
         double basePrice = pricingService.calculatePrice(request.roomId(), request.from(), request.to());
         double finalPrice = discountService.applyDiscount(request.userId(), basePrice);
-        PaymentResult payment = paymentService.charge(request.userId(), finalPrice);
-        if (!payment.isSuccess()) throw new IllegalStateException("Payment failed");
 
+        PaymentResult payment = paymentService.charge(request.userId(), finalPrice);
+        if (!payment.isSuccess()) {
+            throw new IllegalStateException("Payment failed");
+        }
+
+        Booking booking = createBookingEntity(request, finalPrice);
+        Booking savedBooking = bookingRepository.save(booking);
+
+        processPostBookingTasks(request.userId(), savedBooking.getId());
+
+        return savedBooking;
+    }
+
+
+    public void cancelBooking(String bookingId) {
+        bookingRepository.delete(bookingId);
+    }
+
+    private Booking createBookingEntity(BookingRequest request, double finalPrice) {
         Booking booking = new Booking();
         booking.setRoomId(request.roomId());
         booking.setUserId(request.userId());
         booking.setFrom(request.from());
         booking.setTo(request.to());
         booking.setPrice(finalPrice);
-
-        Booking saved = bookingRepository.save(booking);
-
-        // notify and invoice generation (non-blocking in real app)
-        notificationService.notifyBookingCreated(request.userId(), saved.getId());
-        invoiceService.generateInvoiceId();
-
-        return saved;
+        return booking;
     }
 
-    public void cancelBooking(String bookingId) {
-        // TODO: cancellation logic
-        bookingRepository.delete(bookingId);
+    private void processPostBookingTasks(String userId, String bookingId) {
+        notificationService.notifyBookingCreated(userId, bookingId);
+        invoiceService.generateInvoiceId();
     }
 }

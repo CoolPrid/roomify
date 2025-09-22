@@ -169,7 +169,7 @@ class PricingServiceTest {
         LocalDate checkOut = checkIn.plusDays(3); // Mon, Tue, Wed nights
 
         double totalPrice = pricingService.calculatePrice("test-room", checkIn, checkOut);
-        
+
         assertEquals(280.0, totalPrice);
     }
 }
